@@ -105,6 +105,65 @@ function httpPost(url, headers = {}, body = null) {
   });
 }
 
+// ── Playwright stealth buat ambil instr ──────────────────────────────────────
+async function getInstrViaPlaywright(blob) {
+  Object.defineProperty(process, 'platform', { get: () => 'linux' });
+  const { chromium } = require('playwright-extra');
+  const stealth = require('puppeteer-extra-plugin-stealth')();
+  chromium.use(stealth);
+
+  const browser = await chromium.launch({
+    executablePath: '/data/data/com.termux/files/usr/bin/chromium-browser',
+    headless: true,
+    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--single-process']
+  });
+
+  try {
+    const page = await browser.newPage();
+    const instr = await page.evaluate(async (blob) => {
+      return new Promise((resolve) => {
+        const timeout = setTimeout(() => resolve({ __timeout: true }), 15000);
+
+        const iframe = document.createElement('iframe');
+        iframe.setAttribute('sandbox', 'allow-scripts');
+        iframe.style.cssText = 'position:absolute;width:1px;height:1px;top:-9999px;';
+
+        window.addEventListener('message', (e) => {
+          if (e.source === iframe.contentWindow) {
+            const d = e.data;
+            if (d && d.type === 'cap:instr') {
+              clearTimeout(timeout);
+              iframe.parentNode && iframe.parentNode.removeChild(iframe);
+              if (d.blocked) resolve({ __blocked: true });
+              else resolve({ ...d.result, vp: [window.innerWidth, window.innerHeight] });
+            }
+          }
+        });
+
+        (async () => {
+          const buf = Uint8Array.from(atob(blob), c => c.charCodeAt(0));
+          const ds = new DecompressionStream('deflate-raw');
+          const w = ds.writable.getWriter();
+          w.write(buf); w.close();
+          const r = ds.readable.getReader();
+          let out = '';
+          while (true) {
+            const { done, value } = await r.read();
+            if (done) break;
+            out += new TextDecoder().decode(value);
+          }
+          iframe.srcdoc = `<!DOCTYPE html><html><body><script>${out}<\/script></body></html>`;
+          document.body.appendChild(iframe);
+        })();
+      });
+    }, blob);
+
+    return instr;
+  } finally {
+    await browser.close();
+  }
+}
+
 // ── Captcha ───────────────────────────────────────────────────────────────────
 async function solveCaptcha() {
   // Step 1: dapet challenges
@@ -113,8 +172,10 @@ async function solveCaptcha() {
   console.log(`  [cap] challenge status: ${chalStatus}`);
   const { token, challenges } = chalData;
 
-  // Step 2: solve tiap hashwx challenge
+  // Step 2: solve tiap challenge
   const solutions = [];
+  let instrBlob = null;
+
   for (const ch of challenges) {
     if (ch.protocol === 'hashwx') {
       process.stdout.write(`  [cap] solving hashwx...`);
@@ -122,14 +183,23 @@ async function solveCaptcha() {
       process.stdout.write(` nonce=${nonce}\n`);
       solutions.push({ nonce });
     } else if (ch.protocol === 'instrumentation') {
-      // skip dulu, lihat apa yang terjadi
-      console.log(`  [cap] instrumentation blob: ${ch.payload.blob.slice(0, 40)}...`);
+      instrBlob = ch.payload.blob;
     }
   }
 
-  // Step 3: redeem
+  // Step 3: ambil instr via stealth browser
+  let instr = null;
+  if (instrBlob) {
+    console.log(`  [cap] getting instr via stealth browser...`);
+    instr = await getInstrViaPlaywright(instrBlob);
+    console.log(`  [cap] instr:`, instr?.__blocked ? 'blocked' : instr?.__timeout ? 'timeout' : 'OK');
+    if (instr?.__blocked || instr?.__timeout) instr = null;
+  }
+
+  // Step 4: redeem
   console.log(`  [cap] redeeming...`);
-  const { status: redeemStatus, data: redeemData } = await httpPost(`${CAP_URL}/redeem`, {}, { solutions, token });
+  const body = { solutions, token, ...(instr ? { instr } : {}) };
+  const { status: redeemStatus, data: redeemData } = await httpPost(`${CAP_URL}/redeem`, {}, body);
   console.log(`  [cap] redeem status: ${redeemStatus}`, JSON.stringify(redeemData).slice(0, 200));
   if (!redeemData.token) throw new Error(`Captcha redeem gagal: ${JSON.stringify(redeemData)}`);
   console.log(`  [cap] token: ${redeemData.token.slice(0, 20)}...`);
