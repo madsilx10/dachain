@@ -17,21 +17,30 @@ function hexToBytes(hex) {
 async function solveHashwx(w, c, d) {
   const target = ((1n << 64n) - 1n) / BigInt(d);
 
-  // alloc context
+  console.log('memory size:', w.memory.buffer.byteLength);
+
   let ctx = w.hashwx_alloc(1);
+  console.log('ctx (alloc 1):', ctx);
   if (ctx === -1 || ctx === 0) {
     ctx = w.hashwx_alloc(0);
+    console.log('ctx (alloc 0):', ctx);
   }
   if (ctx <= 0) throw new Error('hashwx_alloc failed');
 
   const seedPtr = w.hashwx_seed(ctx);
-  const mem = new Uint8Array(w.memory.buffer);
+  console.log('seedPtr:', seedPtr);
+  console.log('memory size:', w.memory.buffer.byteLength);
 
-  // tulis seed dari c (hex string → bytes)
+  const mem = new Uint8Array(w.memory.buffer);
   const cBytes = hexToBytes(c);
+  console.log('cBytes length:', cBytes.length);
+  console.log('writing to offset:', seedPtr, 'end:', seedPtr + cBytes.length);
+
   mem.set(cBytes, seedPtr);
+  console.log('seed written, calling hashwx_make...');
 
   w.hashwx_make(ctx, seedPtr);
+  console.log('hashwx_make done');
 
   let nonce = 0;
   const start = Date.now();
