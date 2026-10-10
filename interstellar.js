@@ -122,32 +122,8 @@ async function solveCaptcha() {
       process.stdout.write(` nonce=${nonce}\n`);
       solutions.push({ nonce });
     } else if (ch.protocol === 'instrumentation') {
-      // fake instrumentation payload
-      solutions.push({
-        instr: {
-          i: ch.payload.blob.slice(0, 24),
-          p: {
-            deviceMemory: 8,
-            engine: { hasMozInnerScreenX: false, hasChrome: true },
-            fontWidths: Array(17).fill(0),
-            isExtended: false,
-            oscpu: '__undefined',
-            outerWH: [360, 640],
-            pdfViewerEnabled: false,
-            plugins: { length: 0 },
-            productSub: '20030107',
-            screen: { width: 360, height: 820 },
-            tamper: { getParameterWebGL: true, toDataURL: true, getImageData: true, permissionsQuery: true, fnToString: true },
-            ua: UA,
-            uaData: { mobile: true, brands: [{ brand: 'Mises', version: '141' }, { brand: 'Not?A_Brand', version: '8' }, { brand: 'Chromium', version: '141' }] },
-            uaDataPresent: true,
-            webdriver: false,
-            state: { foi4i963n5sw: 480676, v3sgt65zxvoy: 402523, zoxnl7urwuv8: 977257, pe1mppy2d136: 111445 },
-            ts: Date.now(),
-            vp: [360, 640],
-          },
-        },
-      });
+      // skip dulu, lihat apa yang terjadi
+      console.log(`  [cap] instrumentation blob: ${ch.payload.blob.slice(0, 40)}...`);
     }
   }
 
