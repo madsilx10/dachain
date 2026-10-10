@@ -75,7 +75,9 @@ async function solveCaptcha() {
   try {
     chalRes = await fetch(`${CAP_URL}/challenge`, {
       method: 'POST',
-      headers: { 'Accept': '*/*', 'Content-Length': '0', 'Origin': BASE_URL, 'Referer': `${BASE_URL}/`, 'User-Agent': UA },
+      headers: { 'Accept': '*/*', 'Content-Length': '0', 'Origin': BASE_URL, 'Referer': `${BASE_URL}/`, 'User-Agent': UA, 'Connection': 'close' },
+      // @ts-ignore
+      dispatcher: new (require('undici').Agent)({ allowH2: false }),
     });
     console.log(`  [cap] challenge status: ${chalRes.status}`);
     chalData = await chalRes.json();
@@ -128,8 +130,10 @@ async function solveCaptcha() {
   try {
     redeemRes = await fetch(`${CAP_URL}/redeem`, {
       method: 'POST',
-      headers: { 'Accept': '*/*', 'Content-Type': 'application/json', 'Origin': BASE_URL, 'Referer': `${BASE_URL}/`, 'User-Agent': UA },
+      headers: { 'Accept': '*/*', 'Content-Type': 'application/json', 'Origin': BASE_URL, 'Referer': `${BASE_URL}/`, 'User-Agent': UA, 'Connection': 'close' },
       body: JSON.stringify({ solutions, token }),
+      // @ts-ignore
+      dispatcher: new (require('undici').Agent)({ allowH2: false }),
     });
     console.log(`  [cap] redeem status: ${redeemRes.status}`);
     redeemData = await redeemRes.json();
