@@ -120,8 +120,10 @@ async function getInstrViaPlaywright(blob) {
 
   try {
     const page = await browser.newPage();
-    // listen console dari page buat debug
     page.on('console', msg => console.log(`  [browser] ${msg.text()}`));
+
+    // goto blank page dulu biar ada proper document
+    await page.goto('about:blank');
 
     const instr = await page.evaluate(async (blob) => {
       return new Promise((resolve) => {
@@ -132,7 +134,9 @@ async function getInstrViaPlaywright(blob) {
         iframe.style.cssText = 'position:absolute;width:360px;height:640px;top:0;left:0;';
 
         window.addEventListener('message', (e) => {
-          console.log('message received:', JSON.stringify(e.data).slice(0, 100));
+          try {
+            console.log('message received type:', e.data?.type, 'blocked:', e.data?.blocked, 'keys:', Object.keys(e.data||{}).join(','));
+          } catch(ex) {}
           const d = e.data;
           if (d && d.type === 'cap:instr') {
             clearTimeout(timeout);
