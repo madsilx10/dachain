@@ -111,6 +111,13 @@ async function processWallet(privateKey) {
   console.log(`[6] Codes: ${codesRes.status}`, codesData.data);
 }
 
+const readline = require('readline');
+
+function ask(question) {
+  const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
+  return new Promise(resolve => rl.question(question, ans => { rl.close(); resolve(ans.trim()); }));
+}
+
 async function main() {
   const keys = fs.readFileSync('wallet.txt', 'utf-8')
     .split('\n')
@@ -118,8 +125,45 @@ async function main() {
     .filter(l => l.length > 0);
 
   console.log(`[*] Total wallet: ${keys.length}`);
+  console.log(`\nPilih mode:`);
+  console.log(`  1. Satu akun`);
+  console.log(`  2. Semua akun`);
+  console.log(`  3. Dari index X sampai akhir`);
 
-  for (const key of keys) {
+  const mode = await ask('\nPilihan (1/2/3): ');
+
+  let selected = [];
+
+  if (mode === '1') {
+    console.log('\nDaftar wallet:');
+    keys.forEach((k, i) => {
+      const addr = new ethers.Wallet(k).address;
+      console.log(`  [${i + 1}] ${addr}`);
+    });
+    const idx = await ask('\nPilih nomor wallet: ');
+    const i = parseInt(idx) - 1;
+    if (isNaN(i) || i < 0 || i >= keys.length) {
+      console.log('[-] Index tidak valid'); process.exit(1);
+    }
+    selected = [keys[i]];
+
+  } else if (mode === '2') {
+    selected = keys;
+
+  } else if (mode === '3') {
+    const from = await ask(`\nMulai dari index (1-${keys.length}): `);
+    const i = parseInt(from) - 1;
+    if (isNaN(i) || i < 0 || i >= keys.length) {
+      console.log('[-] Index tidak valid'); process.exit(1);
+    }
+    selected = keys.slice(i);
+    console.log(`[*] Proses ${selected.length} wallet (index ${i + 1} sampai ${keys.length})`);
+
+  } else {
+    console.log('[-] Pilihan tidak valid'); process.exit(1);
+  }
+
+  for (const key of selected) {
     await processWallet(key);
   }
 }
