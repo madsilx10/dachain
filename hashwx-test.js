@@ -36,13 +36,16 @@ async function solveHashwx(w, c, d) {
   console.log('memory size:', w.memory.buffer.byteLength);
 
   const mem = new Uint8Array(w.memory.buffer);
-  const cBytes = hexToBytes(c);
-  console.log('cBytes length:', cBytes.length);
-  console.log('writing to offset:', seedPtr, 'end:', seedPtr + cBytes.length);
 
-  mem.set(cBytes, seedPtr);
-  console.log('seed written, calling hashwx_make...');
+  // tulis sebagai string hex (ascii bytes)
+  const cStr = c;
+  console.log('c string length:', cStr.length);
+  for (let i = 0; i < cStr.length; i++) {
+    mem[seedPtr + i] = cStr.charCodeAt(i);
+  }
+  mem[seedPtr + cStr.length] = 0; // null terminate
 
+  console.log('seed written as string, calling hashwx_make...');
   w.hashwx_make(ctx, seedPtr);
   console.log('hashwx_make done');
 
