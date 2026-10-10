@@ -17,6 +17,8 @@ function hexToBytes(hex) {
 async function solveHashwx(w, c, d) {
   const target = ((1n << 64n) - 1n) / BigInt(d);
 
+  w._initialize();
+  console.log('initialized');
   console.log('memory size:', w.memory.buffer.byteLength);
 
   let ctx = w.hashwx_alloc(1);
