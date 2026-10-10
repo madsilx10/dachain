@@ -46,18 +46,16 @@ async function solveHashwx(w, c, d) {
   w.hashwx_make(ctx, seedPtr);
   console.log('hashwx_make done');
 
-  let nonce = 0;
+  let nonce = 0n;
   const start = Date.now();
   while (true) {
-    const raw = w.hashwx_exec(ctx, nonce);
-    if (nonce === 0) console.log('raw type:', typeof raw, 'value:', raw);
-    const result = typeof raw === 'bigint' ? BigInt.asUintN(64, raw) : BigInt.asUintN(64, BigInt(Math.abs(raw)));
+    const result = BigInt.asUintN(64, w.hashwx_exec(ctx, nonce));
     if (result <= target) {
       console.log(`Solved! nonce=${nonce} in ${Date.now() - start}ms`);
       return nonce.toString();
     }
     nonce++;
-    if (nonce % 100000 === 0) {
+    if (nonce % 100000n === 0n) {
       console.log(`Trying nonce ${nonce}...`);
     }
   }
