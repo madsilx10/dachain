@@ -48,7 +48,8 @@ async function solveHashwx(w, c, d) {
   const start = Date.now();
   while (true) {
     const raw = w.hashwx_exec(ctx, nonce);
-    const result = BigInt.asUintN(64, BigInt(raw));
+    if (nonce === 0) console.log('raw type:', typeof raw, 'value:', raw);
+    const result = typeof raw === 'bigint' ? BigInt.asUintN(64, raw) : BigInt.asUintN(64, BigInt(Math.abs(raw)));
     if (result <= target) {
       console.log(`Solved! nonce=${nonce} in ${Date.now() - start}ms`);
       return nonce.toString();
