@@ -120,23 +120,25 @@ async function getInstrViaPlaywright(blob) {
 
   try {
     const page = await browser.newPage();
+    // listen console dari page buat debug
+    page.on('console', msg => console.log(`  [browser] ${msg.text()}`));
+
     const instr = await page.evaluate(async (blob) => {
       return new Promise((resolve) => {
-        const timeout = setTimeout(() => resolve({ __timeout: true }), 15000);
+        const timeout = setTimeout(() => resolve({ __timeout: true }), 30000);
 
         const iframe = document.createElement('iframe');
         iframe.setAttribute('sandbox', 'allow-scripts');
-        iframe.style.cssText = 'position:absolute;width:1px;height:1px;top:-9999px;';
+        iframe.style.cssText = 'position:absolute;width:360px;height:640px;top:0;left:0;';
 
         window.addEventListener('message', (e) => {
-          if (e.source === iframe.contentWindow) {
-            const d = e.data;
-            if (d && d.type === 'cap:instr') {
-              clearTimeout(timeout);
-              iframe.parentNode && iframe.parentNode.removeChild(iframe);
-              if (d.blocked) resolve({ __blocked: true });
-              else resolve({ ...d.result, vp: [window.innerWidth, window.innerHeight] });
-            }
+          console.log('message received:', JSON.stringify(e.data).slice(0, 100));
+          const d = e.data;
+          if (d && d.type === 'cap:instr') {
+            clearTimeout(timeout);
+            iframe.parentNode && iframe.parentNode.removeChild(iframe);
+            if (d.blocked) resolve({ __blocked: true, reason: d.blockReason });
+            else resolve({ ...d.result, vp: [360, 640] });
           }
         });
 
@@ -152,8 +154,10 @@ async function getInstrViaPlaywright(blob) {
             if (done) break;
             out += new TextDecoder().decode(value);
           }
+          console.log('iframe script length:', out.length);
           iframe.srcdoc = `<!DOCTYPE html><html><body><script>${out}<\/script></body></html>`;
           document.body.appendChild(iframe);
+          console.log('iframe appended');
         })();
       });
     }, blob);
