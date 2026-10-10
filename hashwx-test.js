@@ -2,9 +2,7 @@ const fs = require('fs');
 
 async function loadHashwx() {
   const wasmBuf = fs.readFileSync('hashwx.wasm');
-  const { instance } = await WebAssembly.instantiate(wasmBuf, {
-    env: { memory: new WebAssembly.Memory({ initial: 256, maximum: 512 }) }
-  });
+  const { instance } = await WebAssembly.instantiate(wasmBuf, {});
   return instance.exports;
 }
 
