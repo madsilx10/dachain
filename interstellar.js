@@ -70,11 +70,18 @@ async function solveHashwx(c, d) {
 // ── Captcha ───────────────────────────────────────────────────────────────────
 async function solveCaptcha() {
   // Step 1: dapet challenges
-  const chalRes = await fetch(`${CAP_URL}/challenge`, {
-    method: 'POST',
-    headers: { 'Accept': '*/*', 'Content-Length': '0', 'Origin': BASE_URL, 'Referer': `${BASE_URL}/`, 'User-Agent': UA },
-  });
-  const chalData = await chalRes.json();
+  console.log(`  [cap] fetching challenge...`);
+  let chalRes, chalData;
+  try {
+    chalRes = await fetch(`${CAP_URL}/challenge`, {
+      method: 'POST',
+      headers: { 'Accept': '*/*', 'Content-Length': '0', 'Origin': BASE_URL, 'Referer': `${BASE_URL}/`, 'User-Agent': UA },
+    });
+    console.log(`  [cap] challenge status: ${chalRes.status}`);
+    chalData = await chalRes.json();
+  } catch (e) {
+    throw new Error(`challenge fetch failed: ${e.message} ${e.cause?.message || ''}`);
+  }
   const { token, challenges } = chalData;
 
   // Step 2: solve tiap hashwx challenge
@@ -116,12 +123,20 @@ async function solveCaptcha() {
   }
 
   // Step 3: redeem
-  const redeemRes = await fetch(`${CAP_URL}/redeem`, {
-    method: 'POST',
-    headers: { 'Accept': '*/*', 'Content-Type': 'application/json', 'Origin': BASE_URL, 'Referer': `${BASE_URL}/`, 'User-Agent': UA },
-    body: JSON.stringify({ solutions, token }),
-  });
-  const redeemData = await redeemRes.json();
+  console.log(`  [cap] redeeming...`);
+  let redeemRes, redeemData;
+  try {
+    redeemRes = await fetch(`${CAP_URL}/redeem`, {
+      method: 'POST',
+      headers: { 'Accept': '*/*', 'Content-Type': 'application/json', 'Origin': BASE_URL, 'Referer': `${BASE_URL}/`, 'User-Agent': UA },
+      body: JSON.stringify({ solutions, token }),
+    });
+    console.log(`  [cap] redeem status: ${redeemRes.status}`);
+    redeemData = await redeemRes.json();
+    console.log(`  [cap] redeem data:`, JSON.stringify(redeemData).slice(0, 200));
+  } catch (e) {
+    throw new Error(`redeem fetch failed: ${e.message} ${e.cause?.message || ''}`);
+  }
   if (!redeemData.token) throw new Error(`Captcha redeem gagal: ${JSON.stringify(redeemData)}`);
   console.log(`  [cap] token: ${redeemData.token.slice(0, 20)}...`);
   return redeemData.token;
