@@ -15,7 +15,9 @@ function hexToBytes(hex) {
 }
 
 async function solveHashwx(w, c, d) {
+  console.log('d value:', d, typeof d);
   const target = ((1n << 64n) - 1n) / BigInt(d);
+  console.log('target:', target);
 
   w._initialize();
   console.log('initialized');
