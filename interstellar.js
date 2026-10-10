@@ -67,23 +67,50 @@ async function solveHashwx(c, d) {
   }
 }
 
+// ── HTTP helper (force HTTP/1.1) ──────────────────────────────────────────────
+const https = require('https');
+const httpsAgent = new https.Agent({ keepAlive: false, rejectUnauthorized: false });
+
+function httpPost(url, headers = {}, body = null) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(url);
+    const data = body ? JSON.stringify(body) : '';
+    const opts = {
+      hostname: u.hostname,
+      port: 443,
+      path: u.pathname,
+      method: 'POST',
+      agent: httpsAgent,
+      headers: {
+        'Accept': '*/*',
+        'Origin': BASE_URL,
+        'Referer': `${BASE_URL}/`,
+        'User-Agent': UA,
+        'Connection': 'close',
+        ...(data ? { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(data) } : { 'Content-Length': '0' }),
+        ...headers,
+      },
+    };
+    const req = https.request(opts, res => {
+      let buf = '';
+      res.on('data', d => buf += d);
+      res.on('end', () => {
+        try { resolve({ status: res.statusCode, data: JSON.parse(buf) }); }
+        catch (e) { reject(new Error(`JSON parse error: ${buf.slice(0, 200)}`)); }
+      });
+    });
+    req.on('error', reject);
+    if (data) req.write(data);
+    req.end();
+  });
+}
+
 // ── Captcha ───────────────────────────────────────────────────────────────────
 async function solveCaptcha() {
   // Step 1: dapet challenges
   console.log(`  [cap] fetching challenge...`);
-  let chalRes, chalData;
-  try {
-    chalRes = await fetch(`${CAP_URL}/challenge`, {
-      method: 'POST',
-      headers: { 'Accept': '*/*', 'Content-Length': '0', 'Origin': BASE_URL, 'Referer': `${BASE_URL}/`, 'User-Agent': UA, 'Connection': 'close' },
-      // @ts-ignore
-      dispatcher: new (require('undici').Agent)({ allowH2: false }),
-    });
-    console.log(`  [cap] challenge status: ${chalRes.status}`);
-    chalData = await chalRes.json();
-  } catch (e) {
-    throw new Error(`challenge fetch failed: ${e.message} ${e.cause?.message || ''}`);
-  }
+  const { status: chalStatus, data: chalData } = await httpPost(`${CAP_URL}/challenge`);
+  console.log(`  [cap] challenge status: ${chalStatus}`);
   const { token, challenges } = chalData;
 
   // Step 2: solve tiap hashwx challenge
@@ -126,21 +153,8 @@ async function solveCaptcha() {
 
   // Step 3: redeem
   console.log(`  [cap] redeeming...`);
-  let redeemRes, redeemData;
-  try {
-    redeemRes = await fetch(`${CAP_URL}/redeem`, {
-      method: 'POST',
-      headers: { 'Accept': '*/*', 'Content-Type': 'application/json', 'Origin': BASE_URL, 'Referer': `${BASE_URL}/`, 'User-Agent': UA, 'Connection': 'close' },
-      body: JSON.stringify({ solutions, token }),
-      // @ts-ignore
-      dispatcher: new (require('undici').Agent)({ allowH2: false }),
-    });
-    console.log(`  [cap] redeem status: ${redeemRes.status}`);
-    redeemData = await redeemRes.json();
-    console.log(`  [cap] redeem data:`, JSON.stringify(redeemData).slice(0, 200));
-  } catch (e) {
-    throw new Error(`redeem fetch failed: ${e.message} ${e.cause?.message || ''}`);
-  }
+  const { status: redeemStatus, data: redeemData } = await httpPost(`${CAP_URL}/redeem`, {}, { solutions, token });
+  console.log(`  [cap] redeem status: ${redeemStatus}`, JSON.stringify(redeemData).slice(0, 200));
   if (!redeemData.token) throw new Error(`Captcha redeem gagal: ${JSON.stringify(redeemData)}`);
   console.log(`  [cap] token: ${redeemData.token.slice(0, 20)}...`);
   return redeemData.token;
