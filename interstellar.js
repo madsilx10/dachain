@@ -126,44 +126,37 @@ async function getInstrViaPlaywright(blob) {
     await page.goto('about:blank');
 
     const instr = await page.evaluate(async (blob) => {
-      return new Promise((resolve) => {
-        const timeout = setTimeout(() => resolve({ __timeout: true }), 30000);
+      // decompress blob
+      const buf = Uint8Array.from(atob(blob), c => c.charCodeAt(0));
+      const ds = new DecompressionStream('deflate-raw');
+      const w = ds.writable.getWriter();
+      w.write(buf); w.close();
+      const r = ds.readable.getReader();
+      let scriptSrc = '';
+      while (true) {
+        const { done, value } = await r.read();
+        if (done) break;
+        scriptSrc += new TextDecoder().decode(value);
+      }
+      console.log('script length:', scriptSrc.length);
 
-        const iframe = document.createElement('iframe');
-        iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
-        iframe.style.cssText = 'position:absolute;width:360px;height:640px;top:0;left:0;';
+      // patch parent reference supaya postMessage nyampe ke window kita
+      const patched = scriptSrc
+        .replace(/parent\.postMessage/g, 'window.__capResult=')
+        .replace(/\bparent\b/g, 'window');
 
-        window.addEventListener('message', (e) => {
-          try {
-            console.log('message received type:', e.data?.type, 'blocked:', e.data?.blocked, 'keys:', Object.keys(e.data||{}).join(','));
-          } catch(ex) {}
-          const d = e.data;
-          if (d && d.type === 'cap:instr') {
-            clearTimeout(timeout);
-            iframe.parentNode && iframe.parentNode.removeChild(iframe);
-            if (d.blocked) resolve({ __blocked: true, reason: d.blockReason });
-            else resolve({ ...d.result, vp: [360, 640] });
-          }
-        });
+      // jalanin langsung
+      try {
+        const fn = new Function(patched);
+        fn();
+      } catch(e) {
+        console.log('exec error:', e.message);
+      }
 
-        (async () => {
-          const buf = Uint8Array.from(atob(blob), c => c.charCodeAt(0));
-          const ds = new DecompressionStream('deflate-raw');
-          const w = ds.writable.getWriter();
-          w.write(buf); w.close();
-          const r = ds.readable.getReader();
-          let out = '';
-          while (true) {
-            const { done, value } = await r.read();
-            if (done) break;
-            out += new TextDecoder().decode(value);
-          }
-          console.log('iframe script length:', out.length);
-          iframe.srcdoc = `<!DOCTYPE html><html><body><script>${out}<\/script></body></html>`;
-          document.body.appendChild(iframe);
-          console.log('iframe appended');
-        })();
-      });
+      // tunggu result
+      await new Promise(res => setTimeout(res, 5000));
+      console.log('cap result:', JSON.stringify(window.__capResult).slice(0, 200));
+      return window.__capResult || { __timeout: true };
     }, blob);
 
     return instr;
