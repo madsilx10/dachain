@@ -238,7 +238,7 @@ async function solveCaptcha() {
     process.stdout.write(`  [cap] solving hashwx...`);
     const nonce = await solveHashwx(ch.payload.c, ch.payload.d);
     process.stdout.write(` nonce=${nonce}\n`);
-    solutions.push({ nonce });
+    solutions.push({ nonce: parseInt(nonce) });
   }
 
   // Step 4: redeem
