@@ -130,7 +130,7 @@ async function getInstrViaPlaywright(blob) {
         const timeout = setTimeout(() => resolve({ __timeout: true }), 30000);
 
         const iframe = document.createElement('iframe');
-        iframe.setAttribute('sandbox', 'allow-scripts');
+        iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
         iframe.style.cssText = 'position:absolute;width:360px;height:640px;top:0;left:0;';
 
         window.addEventListener('message', (e) => {
