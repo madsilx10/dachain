@@ -128,13 +128,16 @@ function startLocalServer() {
 }
 
 // ── Playwright stealth buat ambil instr ──────────────────────────────────────
-async function getInstrViaPlaywright(blob) {
+let sharedBrowser = null;
+let sharedPage = null;
+
+async function initBrowser() {
+  if (sharedBrowser) return;
   Object.defineProperty(process, 'platform', { get: () => 'linux' });
   const { chromium } = require('playwright-extra');
   const stealth = require('puppeteer-extra-plugin-stealth')();
   chromium.use(stealth);
-
-  const browser = await chromium.launch({
+  sharedBrowser = await chromium.launch({
     executablePath: '/data/data/com.termux/files/usr/bin/chromium-browser',
     headless: true,
     args: [
@@ -145,9 +148,14 @@ async function getInstrViaPlaywright(blob) {
       '--window-size=360,820',
     ]
   });
+  sharedPage = await sharedBrowser.newPage();
+  sharedPage.on('console', msg => console.log(`  [browser] ${msg.text()}`));
+  console.log('[*] Stealth browser ready');
+}
 
+async function getInstrViaPlaywright(blob) {
+  const page = sharedPage;
   try {
-    const page = await browser.newPage();
     page.on('console', msg => console.log(`  [browser] ${msg.text()}`));
 
     // decompress blob di Node.js
@@ -207,8 +215,9 @@ async function getInstrViaPlaywright(blob) {
     if (result.__timeout || result.blocked) return null;
     return { ...result.result, vp: [360, 640] };
 
-  } finally {
-    await browser.close();
+  } catch(e) {
+    console.log(`  [cap] instr error:`, e.message);
+    return null;
   }
 }
 
@@ -352,6 +361,7 @@ function ask(q) {
 
 async function main() {
   await initWasm();
+  await initBrowser();
 
   const keys = fs.readFileSync('wallet.txt', 'utf-8').split('\n').map(l => l.trim()).filter(Boolean);
   console.log(`[*] Total wallet: ${keys.length}`);
