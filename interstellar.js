@@ -105,6 +105,29 @@ function httpPost(url, headers = {}, body = null) {
   });
 }
 
+// ── Local HTTP server buat serve iframe script ────────────────────────────────
+const http = require('http');
+let localServer = null;
+let localScriptContent = '';
+let localPort = 19876;
+
+function startLocalServer() {
+  return new Promise((resolve) => {
+    localServer = http.createServer((req, res) => {
+      if (req.url === '/iframe.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(`<!DOCTYPE html><html><body><script>${localScriptContent}<\/script></body></html>`);
+      } else if (req.url === '/parent.html') {
+        res.writeHead(200, { 'Content-Type': 'text/html' });
+        res.end(`<!DOCTYPE html><html><body></body></html>`);
+      } else {
+        res.writeHead(404); res.end();
+      }
+    });
+    localServer.listen(localPort, '127.0.0.1', () => resolve());
+  });
+}
+
 // ── Playwright stealth buat ambil instr ──────────────────────────────────────
 async function getInstrViaPlaywright(blob) {
   Object.defineProperty(process, 'platform', { get: () => 'linux' });
@@ -122,68 +145,54 @@ async function getInstrViaPlaywright(blob) {
     const page = await browser.newPage();
     page.on('console', msg => console.log(`  [browser] ${msg.text()}`));
 
-    // goto blank page dulu biar ada proper document
-    await page.goto('about:blank');
+    // decompress blob di Node.js
+    const zlib = require('zlib');
+    const raw = Buffer.from(blob, 'base64');
+    const script = zlib.inflateRawSync(raw).toString();
+    localScriptContent = script;
+    console.log(`  [cap] iframe script: ${script.length} bytes`);
 
-    // expose function dari Node.js ke browser
+    // start local server kalo belum
+    if (!localServer) await startLocalServer();
+
+    // buka parent page dari same origin sebagai iframe
+    await page.goto(`http://127.0.0.1:${localPort}/parent.html`);
+
     let resolveInstr;
     const instrPromise = new Promise(res => resolveInstr = res);
     await page.exposeFunction('__onCapInstr', (data) => {
-      console.log(`  [browser->node] cap:instr received`);
+      console.log(`  [node] cap:instr received, blocked=${data.blocked}`);
       resolveInstr(data);
     });
 
-    await page.evaluate(async (blob) => {
-      // intercept postMessage sebelum iframe jalan
-      const origPostMessage = window.postMessage.bind(window);
+    await page.evaluate((port) => {
       window.addEventListener('message', (e) => {
         const d = e.data;
         if (d && d.type === 'cap:instr') {
-          console.log('cap:instr caught! blocked:', d.blocked);
+          console.log('cap:instr! blocked=' + d.blocked + ' hasResult=' + !!d.result);
           window.__onCapInstr({
             blocked: d.blocked || false,
             blockReason: d.blockReason,
             result: d.result,
-            nonce: d.nonce,
           });
         }
       });
 
-      const buf = Uint8Array.from(atob(blob), c => c.charCodeAt(0));
-      const ds = new DecompressionStream('deflate-raw');
-      const w = ds.writable.getWriter();
-      w.write(buf); w.close();
-      const r = ds.readable.getReader();
-      let out = '';
-      while (true) {
-        const { done, value } = await r.read();
-        if (done) break;
-        out += new TextDecoder().decode(value);
-      }
-      console.log('iframe script length:', out.length);
       const iframe = document.createElement('iframe');
-      iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+      iframe.src = `http://127.0.0.1:${port}/iframe.html`;
       iframe.style.cssText = 'position:absolute;width:360px;height:640px;top:0;left:0;';
-      iframe.srcdoc = `<!DOCTYPE html><html><body><script>${out}<\/script></body></html>`;
       document.body.appendChild(iframe);
-      console.log('iframe appended');
-    }, blob);
+      console.log('iframe appended via src');
+    }, localPort);
 
-    const timeoutPromise = new Promise(res => setTimeout(() => res({ __timeout: true }), 30000));
-    const raw = await Promise.race([instrPromise, timeoutPromise]);
+    const timeoutP = new Promise(res => setTimeout(() => res({ __timeout: true }), 30000));
+    const result = await Promise.race([instrPromise, timeoutP]);
 
-    let instr;
-    if (raw.__timeout) {
-      instr = { __timeout: true };
-    } else if (raw.blocked) {
-      instr = { __blocked: true, reason: raw.blockReason };
-    } else {
-      instr = { ...raw.result, vp: [360, 640] };
-    }
+    if (result.__timeout) return { __timeout: true };
+    if (result.blocked) return { __blocked: true };
+    return { ...result.result, vp: [360, 640] };
 
-    return instr;
   } finally {
-
     await browser.close();
   }
 }
