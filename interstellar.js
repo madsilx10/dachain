@@ -125,42 +125,65 @@ async function getInstrViaPlaywright(blob) {
     // goto blank page dulu biar ada proper document
     await page.goto('about:blank');
 
-    const instr = await page.evaluate(async (blob) => {
-      // decompress blob
+    // expose function dari Node.js ke browser
+    let resolveInstr;
+    const instrPromise = new Promise(res => resolveInstr = res);
+    await page.exposeFunction('__onCapInstr', (data) => {
+      console.log(`  [browser->node] cap:instr received`);
+      resolveInstr(data);
+    });
+
+    await page.evaluate(async (blob) => {
+      // intercept postMessage sebelum iframe jalan
+      const origPostMessage = window.postMessage.bind(window);
+      window.addEventListener('message', (e) => {
+        const d = e.data;
+        if (d && d.type === 'cap:instr') {
+          console.log('cap:instr caught! blocked:', d.blocked);
+          window.__onCapInstr({
+            blocked: d.blocked || false,
+            blockReason: d.blockReason,
+            result: d.result,
+            nonce: d.nonce,
+          });
+        }
+      });
+
       const buf = Uint8Array.from(atob(blob), c => c.charCodeAt(0));
       const ds = new DecompressionStream('deflate-raw');
       const w = ds.writable.getWriter();
       w.write(buf); w.close();
       const r = ds.readable.getReader();
-      let scriptSrc = '';
+      let out = '';
       while (true) {
         const { done, value } = await r.read();
         if (done) break;
-        scriptSrc += new TextDecoder().decode(value);
+        out += new TextDecoder().decode(value);
       }
-      console.log('script length:', scriptSrc.length);
-
-      // patch parent reference supaya postMessage nyampe ke window kita
-      const patched = scriptSrc
-        .replace(/parent\.postMessage/g, 'window.__capResult=')
-        .replace(/\bparent\b/g, 'window');
-
-      // jalanin langsung
-      try {
-        const fn = new Function(patched);
-        fn();
-      } catch(e) {
-        console.log('exec error:', e.message);
-      }
-
-      // tunggu result
-      await new Promise(res => setTimeout(res, 5000));
-      console.log('cap result:', JSON.stringify(window.__capResult).slice(0, 200));
-      return window.__capResult || { __timeout: true };
+      console.log('iframe script length:', out.length);
+      const iframe = document.createElement('iframe');
+      iframe.setAttribute('sandbox', 'allow-scripts allow-same-origin');
+      iframe.style.cssText = 'position:absolute;width:360px;height:640px;top:0;left:0;';
+      iframe.srcdoc = `<!DOCTYPE html><html><body><script>${out}<\/script></body></html>`;
+      document.body.appendChild(iframe);
+      console.log('iframe appended');
     }, blob);
+
+    const timeoutPromise = new Promise(res => setTimeout(() => res({ __timeout: true }), 30000));
+    const raw = await Promise.race([instrPromise, timeoutPromise]);
+
+    let instr;
+    if (raw.__timeout) {
+      instr = { __timeout: true };
+    } else if (raw.blocked) {
+      instr = { __blocked: true, reason: raw.blockReason };
+    } else {
+      instr = { ...raw.result, vp: [360, 640] };
+    }
 
     return instr;
   } finally {
+
     await browser.close();
   }
 }
