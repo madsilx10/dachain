@@ -170,11 +170,22 @@ async function getInstrViaPlaywright(blob) {
       resolveInstr(data);
     });
 
+    // debug deteksi bot
+    const botChecks = await page.evaluate(() => ({
+      webdriver: navigator.webdriver,
+      chrome: !!window.chrome,
+      plugins: navigator.plugins.length,
+      languages: navigator.languages,
+      platform: navigator.platform,
+      hardwareConcurrency: navigator.hardwareConcurrency,
+    }));
+    console.log(`  [debug] botChecks:`, JSON.stringify(botChecks));
+
     await page.evaluate((port) => {
       window.addEventListener('message', (e) => {
         const d = e.data;
         if (d && d.type === 'cap:instr') {
-          console.log('cap:instr! blocked=' + d.blocked + ' hasResult=' + !!d.result);
+          console.log('cap:instr! blocked=' + d.blocked + ' blockReason=' + d.blockReason + ' hasResult=' + !!d.result);
           window.__onCapInstr({
             blocked: d.blocked || false,
             blockReason: d.blockReason,
