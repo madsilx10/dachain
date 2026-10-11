@@ -137,7 +137,13 @@ async function getInstrViaPlaywright(blob) {
   const browser = await chromium.launch({
     executablePath: '/data/data/com.termux/files/usr/bin/chromium-browser',
     headless: true,
-    args: ['--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage','--disable-gpu','--single-process']
+    args: [
+      '--no-sandbox','--disable-setuid-sandbox','--disable-dev-shm-usage',
+      '--disable-gpu','--single-process',
+      '--disable-blink-features=AutomationControlled',
+      '--disable-features=IsolateOrigins,site-per-process',
+      '--window-size=360,820',
+    ]
   });
 
   try {
@@ -203,28 +209,25 @@ async function solveCaptcha() {
   console.log(`  [cap] challenge status: ${chalStatus}`);
   const { token, challenges } = chalData;
 
-  // Step 2: solve tiap challenge
-  const solutions = [];
-  let instrBlob = null;
+  // pisahin challenge by type
+  const hashwxChallenges = challenges.filter(c => c.protocol === 'hashwx');
+  const instrChallenge = challenges.find(c => c.protocol === 'instrumentation');
 
-  for (const ch of challenges) {
-    if (ch.protocol === 'hashwx') {
-      process.stdout.write(`  [cap] solving hashwx...`);
-      const nonce = await solveHashwx(ch.payload.c, ch.payload.d);
-      process.stdout.write(` nonce=${nonce}\n`);
-      solutions.push({ nonce });
-    } else if (ch.protocol === 'instrumentation') {
-      instrBlob = ch.payload.blob;
-    }
+  // Step 2: ambil instr dulu via stealth browser (sebelum solve hashwx biar ga expire)
+  let instr = null;
+  if (instrChallenge) {
+    console.log(`  [cap] getting instr via stealth browser...`);
+    instr = await getInstrViaPlaywright(instrChallenge.payload.blob);
+    console.log(`  [cap] instr:`, instr ? 'OK' : 'null (blocked/timeout)');
   }
 
-  // Step 3: ambil instr via stealth browser
-  let instr = null;
-  if (instrBlob) {
-    console.log(`  [cap] getting instr via stealth browser...`);
-    instr = await getInstrViaPlaywright(instrBlob);
-    console.log(`  [cap] instr:`, instr?.__blocked ? 'blocked' : instr?.__timeout ? 'timeout' : 'OK');
-    if (instr?.__blocked || instr?.__timeout) instr = null;
+  // Step 3: solve hashwx (setelah instr, biar fresh)
+  const solutions = [];
+  for (const ch of hashwxChallenges) {
+    process.stdout.write(`  [cap] solving hashwx...`);
+    const nonce = await solveHashwx(ch.payload.c, ch.payload.d);
+    process.stdout.write(` nonce=${nonce}\n`);
+    solutions.push({ nonce });
   }
 
   // Step 4: redeem
