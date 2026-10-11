@@ -114,14 +114,13 @@ let localPort = 19876;
 function startLocalServer() {
   return new Promise((resolve) => {
     localServer = http.createServer((req, res) => {
-      if (req.url === '/iframe.html') {
+      console.log(`  [server] ${req.url}`);
+      if (req.url.startsWith('/iframe')) {
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(`<!DOCTYPE html><html><body><script>${localScriptContent}<\/script></body></html>`);
-      } else if (req.url === '/parent.html') {
+      } else {
         res.writeHead(200, { 'Content-Type': 'text/html' });
         res.end(`<!DOCTYPE html><html><body></body></html>`);
-      } else {
-        res.writeHead(404); res.end();
       }
     });
     localServer.listen(localPort, '127.0.0.1', () => resolve());
@@ -188,8 +187,7 @@ async function getInstrViaPlaywright(blob) {
     const timeoutP = new Promise(res => setTimeout(() => res({ __timeout: true }), 30000));
     const result = await Promise.race([instrPromise, timeoutP]);
 
-    if (result.__timeout) return { __timeout: true };
-    if (result.blocked) return { __blocked: true };
+    if (result.__timeout || result.blocked) return null;
     return { ...result.result, vp: [360, 640] };
 
   } finally {
