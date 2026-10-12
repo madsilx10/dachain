@@ -54,7 +54,9 @@ async function solveHashwx(c, d) {
   const target = ((1n << 64n) - 1n) / BigInt(d);
   const seedPtr = w.hashwx_seed(wasmCtx);
   const mem = new Uint8Array(w.memory.buffer);
-  mem.set(hexToBytes(c), seedPtr);
+  // tulis c sebagai ASCII string (hex chars), bukan raw bytes
+  for (let i = 0; i < c.length; i++) mem[seedPtr + i] = c.charCodeAt(i);
+  mem[seedPtr + c.length] = 0;
   w.hashwx_make(wasmCtx, seedPtr);
 
   let nonce = 0n;
