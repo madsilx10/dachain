@@ -49,24 +49,25 @@ function hexToBytes(hex) {
   return bytes;
 }
 
-async function solveHashwx(c, d) {
+async function solveHashwx(c, d, n = 65536) {
   const w = wasmExports;
   const target = ((1n << 64n) - 1n) / BigInt(d);
+  const maxNonce = BigInt(n);
   const seedPtr = w.hashwx_seed(wasmCtx);
   const mem = new Uint8Array(w.memory.buffer);
-  // tulis c sebagai ASCII string (hex chars), bukan raw bytes
   for (let i = 0; i < c.length; i++) mem[seedPtr + i] = c.charCodeAt(i);
   mem[seedPtr + c.length] = 0;
   w.hashwx_make(wasmCtx, seedPtr);
 
   let nonce = 0n;
-  while (true) {
+  while (nonce < maxNonce) {
     w.hashwx_exec_begin(wasmCtx, nonce);
     subExecFn(wasmRegPtr, wasmMemPtr);
     const result = BigInt.asUintN(64, w.hashwx_exec_final(wasmCtx));
     if (result <= target) return nonce.toString();
     nonce++;
   }
+  throw new Error(`hashwx: no solution found within ${n} nonces`);
 }
 
 // ── HTTP helper (force HTTP/1.1) ──────────────────────────────────────────────
@@ -247,7 +248,7 @@ async function solveCaptcha() {
   const solutions = [];
   for (const ch of hashwxChallenges) {
     process.stdout.write(`  [cap] solving hashwx...`);
-    const nonce = await solveHashwx(ch.payload.c, ch.payload.d);
+    const nonce = await solveHashwx(ch.payload.c, ch.payload.d, ch.payload.n);
     process.stdout.write(` nonce=${nonce}\n`);
     solutions.push({ nonce: parseInt(nonce) });
   }
