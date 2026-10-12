@@ -228,9 +228,8 @@ async function solveCaptcha() {
   console.log(`  [cap] fetching challenge...`);
   const { status: chalStatus, data: chalData } = await httpPost(`${CAP_URL}/challenge`);
   console.log(`  [cap] challenge status: ${chalStatus}`);
-  console.log(`  [cap] challenge token:`, chalData.token?.slice(0, 40));
-  console.log(`  [cap] challenges count:`, chalData.challenges?.length);
-  chalData.challenges?.forEach((ch, i) => console.log(`  [cap] ch[${i}]:`, ch.protocol, JSON.stringify(ch.payload).slice(0, 80)));
+  console.log(`  [cap] chalData keys:`, Object.keys(chalData));
+  console.log(`  [cap] chalData sample:`, JSON.stringify(chalData).slice(0, 300));
   const { token, challenges } = chalData;
 
   // pisahin challenge by type
