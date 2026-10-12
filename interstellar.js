@@ -49,10 +49,9 @@ function hexToBytes(hex) {
   return bytes;
 }
 
-async function solveHashwx(c, d, n = 65536) {
+async function solveHashwx(c, d) {
   const w = wasmExports;
   const target = ((1n << 64n) - 1n) / BigInt(d);
-  const maxNonce = BigInt(n);
   const seedPtr = w.hashwx_seed(wasmCtx);
   const mem = new Uint8Array(w.memory.buffer);
   for (let i = 0; i < c.length; i++) mem[seedPtr + i] = c.charCodeAt(i);
@@ -60,14 +59,13 @@ async function solveHashwx(c, d, n = 65536) {
   w.hashwx_make(wasmCtx, seedPtr);
 
   let nonce = 0n;
-  while (nonce < maxNonce) {
+  while (true) {
     w.hashwx_exec_begin(wasmCtx, nonce);
     subExecFn(wasmRegPtr, wasmMemPtr);
     const result = BigInt.asUintN(64, w.hashwx_exec_final(wasmCtx));
     if (result <= target) return nonce.toString();
     nonce++;
   }
-  throw new Error(`hashwx: no solution found within ${n} nonces`);
 }
 
 // ── HTTP helper (force HTTP/1.1) ──────────────────────────────────────────────
@@ -230,6 +228,9 @@ async function solveCaptcha() {
   console.log(`  [cap] fetching challenge...`);
   const { status: chalStatus, data: chalData } = await httpPost(`${CAP_URL}/challenge`);
   console.log(`  [cap] challenge status: ${chalStatus}`);
+  console.log(`  [cap] challenge token:`, chalData.token?.slice(0, 40));
+  console.log(`  [cap] challenges count:`, chalData.challenges?.length);
+  chalData.challenges?.forEach((ch, i) => console.log(`  [cap] ch[${i}]:`, ch.protocol, JSON.stringify(ch.payload).slice(0, 80)));
   const { token, challenges } = chalData;
 
   // pisahin challenge by type
@@ -248,7 +249,7 @@ async function solveCaptcha() {
   const solutions = [];
   for (const ch of hashwxChallenges) {
     process.stdout.write(`  [cap] solving hashwx...`);
-    const nonce = await solveHashwx(ch.payload.c, ch.payload.d, ch.payload.n);
+    const nonce = await solveHashwx(ch.payload.c, ch.payload.d);
     process.stdout.write(` nonce=${nonce}\n`);
     solutions.push({ nonce: parseInt(nonce) });
   }
