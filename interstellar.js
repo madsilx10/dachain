@@ -253,7 +253,10 @@ async function solveCaptcha() {
   // Step 4: redeem
   console.log(`  [cap] redeeming...`);
   const body = { solutions, token, ...(instr ? { instr } : {}) };
-  console.log(`  [cap] payload:`, JSON.stringify({ solutions, token: token?.slice(0,30), instrKeys: instr ? Object.keys(instr) : null }));
+  console.log(`  [cap] token:`, token?.slice(0, 50));
+  console.log(`  [cap] solutions:`, JSON.stringify(solutions));
+  console.log(`  [cap] instr keys:`, instr ? Object.keys(instr) : null);
+  if (instr) console.log(`  [cap] instr.i:`, instr.i, 'state:', JSON.stringify(instr.state));
   const { status: redeemStatus, data: redeemData } = await httpPost(`${CAP_URL}/redeem`, {}, body);
   console.log(`  [cap] redeem status: ${redeemStatus}`, JSON.stringify(redeemData).slice(0, 200));
   if (!redeemData.token) throw new Error(`Captcha redeem gagal: ${JSON.stringify(redeemData)}`);
