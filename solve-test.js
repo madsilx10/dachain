@@ -73,7 +73,8 @@ async function solveOne(c, d, n) {
 (async () => {
   // fetch fresh challenge
   const chal = await httpPost('/74e539aa4f/challenge');
-  console.log('token:', chal.token?.slice(0, 40));
+  console.log('raw:', JSON.stringify(chal).slice(0, 200));
+  if (!chal.token) { console.log('no token, exit'); return; }
   
   const hashwxChallenges = chal.challenges.filter(c => c.protocol === 'hashwx');
   console.log('challenges:', hashwxChallenges.length);
