@@ -419,6 +419,7 @@ function ask(q) {
 
 async function main() {
   await initWasm();
+  await startLocalServer();
   await initBrowser();
 
   const keys = fs.readFileSync('wallet.txt', 'utf-8').split('\n').map(l => l.trim()).filter(Boolean);
