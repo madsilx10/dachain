@@ -11,11 +11,6 @@ async function test(label, nonces) {
   const memPtr = w.exports.hashwx_memory(ctx);
   const mem = new Uint8Array(w.exports.memory.buffer);
 
-  const modPtr = w.exports.hashwx_module(ctx);
-  const modSize = w.exports.hashwx_module_size(ctx);
-  const modBytes = new Uint8Array(w.exports.memory.buffer, modPtr, modSize).slice();
-  const sub = new WebAssembly.Instance(new WebAssembly.Module(modBytes), {env:{memory:w.exports.memory}});
-
   const c = 'a31b5e22ffb229f219352daa979cd2543b4af8049fc6b6dce01dcc78a00197d6';
   const d = 362500;
   const target = ((1n << 64n) - 1n) / BigInt(d);
@@ -23,6 +18,8 @@ async function test(label, nonces) {
   // c sebagai 32 raw bytes
   const cBytes = new Uint8Array(32);
   for (let i = 0; i < 32; i++) cBytes[i] = parseInt(c.slice(2*i, 2*i+2), 16);
+
+  let sub = null;
 
   for (const nonce of nonces) {
     // seed = cBytes + nonce (8 bytes little-endian)
@@ -37,6 +34,15 @@ async function test(label, nonces) {
     // set x ke seedPtr, call hashwx_make
     mem.set(x, seedPtr);
     w.exports.hashwx_make(ctx, seedPtr);
+
+    // load sub-wasm setelah make (sekali aja)
+    if (!sub) {
+      const modPtr = w.exports.hashwx_module(ctx);
+      const modSize = w.exports.hashwx_module_size(ctx);
+      const modBytes = new Uint8Array(w.exports.memory.buffer, modPtr, modSize).slice();
+      sub = new WebAssembly.Instance(new WebAssembly.Module(modBytes), {env:{memory:w.exports.memory}});
+      console.log('sub-wasm loaded, modSize:', modSize);
+    }
 
     // exec
     w.exports.hashwx_exec_begin(ctx, BigInt(nonce));
