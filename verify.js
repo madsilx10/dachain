@@ -21,11 +21,16 @@ async function test(label, nonces) {
 
   let sub = null;
 
+  const W = 65536; // n dari challenge
+
   for (const nonce of nonces) {
-    // seed = cBytes + nonce (8 bytes little-endian)
+    const outerIdx = Math.floor(nonce / W);
+    const innerIdx = nonce % W;
+
+    // seed = cBytes + outerIdx (8 bytes little-endian)
     const seed40 = new Uint8Array(40);
     seed40.set(cBytes, 0);
-    let n = nonce;
+    let n = outerIdx;
     for (let e = 0; e < 8; e++) { seed40[32+e] = n & 0xff; n = Math.floor(n/256); }
 
     // SHA-256(seed40) → x (32 bytes)
@@ -35,7 +40,7 @@ async function test(label, nonces) {
     mem.set(x, seedPtr);
     w.exports.hashwx_make(ctx, seedPtr);
 
-    // load sub-wasm setelah make (sekali aja)
+    // load sub-wasm setelah make pertama
     if (!sub) {
       const modPtr = w.exports.hashwx_module(ctx);
       const modSize = w.exports.hashwx_module_size(ctx);
@@ -44,11 +49,12 @@ async function test(label, nonces) {
       console.log('sub-wasm loaded, modSize:', modSize);
     }
 
-    // exec
-    w.exports.hashwx_exec_begin(ctx, BigInt(nonce));
+    // exec dengan full nonce (outerIdx * W + innerIdx)
+    const fullNonce = BigInt(outerIdx) * BigInt(W) + BigInt(innerIdx);
+    w.exports.hashwx_exec_begin(ctx, fullNonce);
     sub.exports.exec(regPtr, memPtr);
     const result = BigInt.asUintN(64, w.exports.hashwx_exec_final(ctx));
-    console.log(`${label} nonce=${nonce}: valid=${result <= target} result=${result.toString().slice(0,10)}`);
+    console.log(`nonce=${nonce} outer=${outerIdx} inner=${innerIdx}: valid=${result <= target} result=${result.toString().slice(0,10)}`);
   }
 }
 
