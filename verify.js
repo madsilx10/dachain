@@ -40,14 +40,11 @@ async function test(label, nonces) {
     mem.set(x, seedPtr);
     w.exports.hashwx_make(ctx, seedPtr);
 
-    // load sub-wasm setelah make pertama
-    if (!sub) {
-      const modPtr = w.exports.hashwx_module(ctx);
-      const modSize = w.exports.hashwx_module_size(ctx);
-      const modBytes = new Uint8Array(w.exports.memory.buffer, modPtr, modSize).slice();
-      sub = new WebAssembly.Instance(new WebAssembly.Module(modBytes), {env:{memory:w.exports.memory}});
-      console.log('sub-wasm loaded, modSize:', modSize);
-    }
+    // reload sub-wasm tiap make
+    const modPtr = w.exports.hashwx_module(ctx);
+    const modSize = w.exports.hashwx_module_size(ctx);
+    const modBytes = new Uint8Array(w.exports.memory.buffer, modPtr, modSize).slice();
+    sub = new WebAssembly.Instance(new WebAssembly.Module(modBytes), {env:{memory:w.exports.memory}});
 
     // exec dengan full nonce (outerIdx * W + innerIdx)
     const fullNonce = BigInt(outerIdx) * BigInt(W) + BigInt(innerIdx);
