@@ -58,27 +58,19 @@ async function solveHashwx(c, d) {
   const seedPtr = w.hashwx_seed(wasmCtx);
   const mem = new Uint8Array(w.memory.buffer);
 
-  // set seed dari c langsung — tanpa SHA256 outer loop
+  // set seed dari c, update "program" di shared memory via hashwx_make
+  // sub-WASM adalah VM interpreter — bytecode sama, program beda per challenge
   const cBytes = new Uint8Array(32);
   for (let i = 0; i < 32; i++) cBytes[i] = parseInt(c.slice(2*i, 2*i+2), 16);
   mem.set(cBytes, seedPtr);
   w.hashwx_make(wasmCtx, seedPtr);
 
-  // compile sub-wasm sekali aja
-  const modPtr = w.hashwx_module(wasmCtx);
-  const modSize = w.hashwx_module_size(wasmCtx);
-  const modBytes = new Uint8Array(w.memory.buffer, modPtr, modSize).slice();
-  const subInst = new WebAssembly.Instance(
-    new WebAssembly.Module(modBytes),
-    { env: { memory: w.memory } }
-  );
-  const subExec = subInst.exports.exec;
-
+  // pakai subExecFn dari initWasm — JANGAN recompile, shared memory udah diupdate
   let nonce = 0n;
   const start = Date.now();
   while (true) {
     w.hashwx_exec_begin(wasmCtx, nonce);
-    subExec(wasmRegPtr, wasmMemPtr);
+    subExecFn(wasmRegPtr, wasmMemPtr);
     const result = BigInt.asUintN(64, w.hashwx_exec_final(wasmCtx));
     if (result <= target) {
       console.log(` solved in ${Date.now()-start}ms, nonce=${nonce}`);
