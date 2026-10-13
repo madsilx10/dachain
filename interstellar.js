@@ -176,6 +176,8 @@ async function initBrowser() {
       '--disable-gpu','--single-process',
       '--disable-blink-features=AutomationControlled',
       '--disable-features=IsolateOrigins,site-per-process',
+      '--disable-web-security',
+      '--allow-running-insecure-content',
       '--window-size=360,820',
     ]
   });
