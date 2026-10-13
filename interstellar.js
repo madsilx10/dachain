@@ -285,7 +285,7 @@ async function solveCaptcha() {
   }
 
   // Step 4: redeem
-  console.log(`  [cap] redeeming...`);
+  console.log(`  [cap] redeeming... elapsed=${((Date.now()-chalTime)/1000).toFixed(1)}s`);
   const body = { solutions, token, ...(instr ? { instr } : {}) };
   console.log(`  [cap] token:`, token?.slice(0, 50));
   console.log(`  [cap] solutions:`, JSON.stringify(solutions));
