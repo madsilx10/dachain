@@ -78,11 +78,12 @@ async function solveHashwx(c, d, n = 65536) {
     mem.set(x, seedPtr);
     w.hashwx_make(wasmCtx, seedPtr);
 
-    // reload sub-wasm tiap outer
+    // reload sub-wasm tiap outer dengan shared memory
     const modPtr = w.hashwx_module(wasmCtx);
     const modSize = w.hashwx_module_size(wasmCtx);
     const modBytes = new Uint8Array(w.memory.buffer, modPtr, modSize).slice();
-    subExec = new WebAssembly.Instance(new WebAssembly.Module(modBytes), { env: { memory: w.memory } }).exports.exec;
+    const subInst = new WebAssembly.Instance(new WebAssembly.Module(modBytes), { env: { memory: w.memory } });
+    subExec = subInst.exports.exec;
 
     // inner loop
     const base = BigInt(outerIdx) * W;
@@ -256,6 +257,7 @@ async function solveCaptcha() {
   // Step 1: dapet challenges
   console.log(`  [cap] fetching challenge...`);
   const { status: chalStatus, data: chalData } = await httpPost(`${CAP_URL}/challenge`);
+  const chalTime = Date.now();
   console.log(`  [cap] challenge status: ${chalStatus}`);
   console.log(`  [cap] chalData keys:`, Object.keys(chalData));
   console.log(`  [cap] chalData sample:`, JSON.stringify(chalData).slice(0, 300));
