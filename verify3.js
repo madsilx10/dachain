@@ -30,13 +30,15 @@ const l = (e, t) => {
 };
 
 async function verify(wasmBuf, c, d, n, expectedNonce) {
-  const { instance: w } = await WebAssembly.instantiate(wasmBuf, {});
-  w.exports._initialize && w.exports._initialize();
-  const ctx = w.exports.hashwx_alloc(1);
-  const seedPtr = w.exports.hashwx_seed(ctx);
-  const regPtr = w.exports.hashwx_registers(ctx);
-  const memPtr = w.exports.hashwx_memory(ctx);
-  const mem = new Uint8Array(w.exports.memory.buffer);
+  // instantiate tanpa shared memory (sesuai source: new WebAssembly.Instance(e,{}).exports)
+  const mod = await WebAssembly.compile(wasmBuf);
+  const w = new WebAssembly.Instance(mod, {}).exports;
+  w._initialize && w._initialize();
+  const ctx = w.hashwx_alloc(1);
+  const seedPtr = w.hashwx_seed(ctx);
+  const regPtr = w.hashwx_registers(ctx);
+  const memPtr = w.hashwx_memory(ctx);
+  const mem = new Uint8Array(w.memory.buffer);
   const target = ((1n << 64n) - 1n) / BigInt(d);
   const W = BigInt(n);
 
@@ -50,17 +52,20 @@ async function verify(wasmBuf, c, d, n, expectedNonce) {
   let tmp = outerIdx;
   for (let e = 0; e < 8; e++) { seed40[32+e] = tmp & 0xff; tmp = Math.floor(tmp/256); }
   l(seed40, out);
-  mem.set(out, seedPtr);
-  w.exports.hashwx_make(ctx, seedPtr);
+  // set x ke memory[seedPtr..seedPtr+32]
+  new Uint8Array(w.memory.buffer, seedPtr, 32).set(out);
+  w.hashwx_make(ctx, seedPtr);
 
-  const modPtr = w.exports.hashwx_module(ctx);
-  const modSize = w.exports.hashwx_module_size(ctx);
-  const modBytes = new Uint8Array(w.exports.memory.buffer, modPtr, modSize).slice();
-  const subExec = new WebAssembly.Instance(new WebAssembly.Module(modBytes), { env: { memory: w.exports.memory } }).exports.exec;
+  const modPtr = w.hashwx_module(ctx);
+  const modSize = w.hashwx_module_size(ctx);
+  const modBytes = new Uint8Array(w.memory.buffer, modPtr, modSize).slice();
+  // sub-wasm dengan shared memory dari parent
+  const subExec = new WebAssembly.Instance(new WebAssembly.Module(modBytes), { env: { memory: w.memory } }).exports.exec;
 
-  w.exports.hashwx_exec_begin(ctx, BigInt(expectedNonce));
+  w.hashwx_exec_begin(ctx, BigInt(expectedNonce));
   subExec(regPtr, memPtr);
-  const result = BigInt.asUintN(64, w.exports.hashwx_exec_final(ctx));
+  const result = BigInt.asUintN(64, w.hashwx_exec_final(ctx));
+  console.log(`  result=${result} target=${target} valid=${result<=target}`);
   return result <= target;
 }
 
