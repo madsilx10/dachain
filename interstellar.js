@@ -181,6 +181,8 @@ async function initBrowser() {
   });
   sharedPage = await sharedBrowser.newPage();
   sharedPage.on('console', msg => console.log(`  [browser] ${msg.text()}`));
+  // navigate ke interstellar supaya CORS cap.dachain.tech OK
+  await sharedPage.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
   console.log('[*] Stealth browser ready');
 }
 
