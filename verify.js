@@ -1,60 +1,51 @@
 const fs = require('fs');
+const crypto = require('crypto');
 const buf = fs.readFileSync('hashwx.wasm');
 
-async function test(label, writeSeed) {
+async function test(label, nonces) {
   const {instance: w} = await WebAssembly.instantiate(buf, {});
   w.exports._initialize();
   const ctx = w.exports.hashwx_alloc(1);
   const seedPtr = w.exports.hashwx_seed(ctx);
+  const regPtr = w.exports.hashwx_registers(ctx);
+  const memPtr = w.exports.hashwx_memory(ctx);
   const mem = new Uint8Array(w.exports.memory.buffer);
-  
-  writeSeed(mem, seedPtr);
-  w.exports.hashwx_make(ctx, seedPtr);
-  
+
   const modPtr = w.exports.hashwx_module(ctx);
   const modSize = w.exports.hashwx_module_size(ctx);
   const modBytes = new Uint8Array(w.exports.memory.buffer, modPtr, modSize).slice();
   const sub = new WebAssembly.Instance(new WebAssembly.Module(modBytes), {env:{memory:w.exports.memory}});
-  const regPtr = w.exports.hashwx_registers(ctx);
-  const memPtr = w.exports.hashwx_memory(ctx);
-  const target = ((1n << 64n) - 1n) / 362500n;
-  
-  const n = 275363n;
-  w.exports.hashwx_exec_begin(ctx, n);
-  sub.exports.exec(regPtr, memPtr);
-  const r = BigInt.asUintN(64, w.exports.hashwx_exec_final(ctx));
-  console.log(label, ':', r <= target ? 'VALID!' : 'invalid', r.toString().slice(0,8));
+
+  const c = 'a31b5e22ffb229f219352daa979cd2543b4af8049fc6b6dce01dcc78a00197d6';
+  const d = 362500;
+  const target = ((1n << 64n) - 1n) / BigInt(d);
+
+  // c sebagai 32 raw bytes
+  const cBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) cBytes[i] = parseInt(c.slice(2*i, 2*i+2), 16);
+
+  for (const nonce of nonces) {
+    // seed = cBytes + nonce (8 bytes little-endian)
+    const seed40 = new Uint8Array(40);
+    seed40.set(cBytes, 0);
+    let n = nonce;
+    for (let e = 0; e < 8; e++) { seed40[32+e] = n & 0xff; n = Math.floor(n/256); }
+
+    // SHA-256(seed40) → x (32 bytes)
+    const x = new Uint8Array(crypto.createHash('sha256').update(seed40).digest());
+
+    // set x ke seedPtr, call hashwx_make
+    mem.set(x, seedPtr);
+    w.exports.hashwx_make(ctx, seedPtr);
+
+    // exec
+    w.exports.hashwx_exec_begin(ctx, BigInt(nonce));
+    sub.exports.exec(regPtr, memPtr);
+    const result = BigInt.asUintN(64, w.exports.hashwx_exec_final(ctx));
+    console.log(`${label} nonce=${nonce}: valid=${result <= target} result=${result.toString().slice(0,10)}`);
+  }
 }
 
-const c = 'a31b5e22ffb229f219352daa979cd2543b4af8049fc6b6dce01dcc78a00197d6';
-
 (async () => {
-  // cara 1: raw bytes
-  await test('raw bytes', (mem, p) => {
-    for (let i = 0; i < c.length; i += 2) mem[p + i/2] = parseInt(c.slice(i, i+2), 16);
-  });
-  
-  // cara 2: ascii string
-  await test('ascii string', (mem, p) => {
-    for (let i = 0; i < c.length; i++) mem[p+i] = c.charCodeAt(i);
-    mem[p+c.length] = 0;
-  });
-  
-  // cara 3: raw bytes + null terminate
-  await test('raw bytes + null', (mem, p) => {
-    for (let i = 0; i < c.length; i += 2) mem[p + i/2] = parseInt(c.slice(i, i+2), 16);
-    mem[p + c.length/2] = 0;
-  });
-
-  // cara 4: hashwx_make dipanggil dengan ptr ke ascii, bukan seedPtr
-  await test('make with alloc ptr', (mem, p) => {
-    for (let i = 0; i < c.length; i++) mem[p+i] = c.charCodeAt(i);
-  });
-
-  // cara 5: uppercase hex
-  await test('uppercase ascii', (mem, p) => {
-    const cu = c.toUpperCase();
-    for (let i = 0; i < cu.length; i++) mem[p+i] = cu.charCodeAt(i);
-    mem[p+cu.length] = 0;
-  });
+  await test('sha256+wasm', [275363, 224451, 302954, 421520]);
 })();
