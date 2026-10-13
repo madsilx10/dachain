@@ -270,15 +270,28 @@ async function solveCaptcha() {
   const { token, challenges } = chalData;
   const hashwxChallenges = challenges.filter(c => c.protocol === 'hashwx');
   const instrChallenge = challenges.find(c => c.protocol === 'instrumentation');
+  console.log(`  [dbg] protocols:`, challenges.map(c => c.protocol));
+  if (hashwxChallenges[0]) console.log(`  [dbg] first hashwx payload:`, JSON.stringify(hashwxChallenges[0].payload));
 
   // Step 2: solve hashwx di Node.js
   const solutions = [];
   for (const ch of hashwxChallenges) {
-    process.stdout.write(`  [cap] solving hashwx...`);
+    process.stdout.write(`  [cap] solving hashwx c=${String(ch.payload.c).slice(0,8)}...`);
     const nonce = await solveHashwx(ch.payload.c, ch.payload.d);
-    process.stdout.write(` nonce=${nonce}\n`);
+
+    // self-verify sebelum submit
+    {
+      const w = wasmExports;
+      const tgt = ((1n << 64n) - 1n) / BigInt(ch.payload.d);
+      w.hashwx_exec_begin(wasmCtx, BigInt(nonce));
+      subExecFn(wasmRegPtr, wasmMemPtr);
+      const chk = BigInt.asUintN(64, w.hashwx_exec_final(wasmCtx));
+      console.log(`  [dbg] nonce=${nonce} result=0x${chk.toString(16)} target=0x${tgt.toString(16)} valid=${chk <= tgt}`);
+    }
+
     solutions.push({ nonce: Number(nonce) });
   }
+  console.log(`  [dbg] full solutions:`, JSON.stringify(solutions));
 
   // Step 3: instr via browser iframe
   let instr = null;
