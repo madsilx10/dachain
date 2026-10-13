@@ -181,8 +181,19 @@ async function initBrowser() {
   });
   sharedPage = await sharedBrowser.newPage();
   sharedPage.on('console', msg => console.log(`  [browser] ${msg.text()}`));
-  // navigate ke interstellar supaya CORS cap.dachain.tech OK
-  await sharedPage.goto(BASE_URL, { waitUntil: 'domcontentloaded', timeout: 30000 }).catch(() => {});
+  // goto local server dengan origin header interstellar
+  await sharedPage.goto(`http://127.0.0.1:${localPort}/parent.html`, { waitUntil: 'domcontentloaded' });
+  // inject origin spoofing untuk fetch ke cap.dachain.tech
+  await sharedPage.addInitScript(() => {
+    const origFetch = window.fetch;
+    window.fetch = (url, opts = {}) => {
+      if (typeof url === 'string' && url.includes('cap.dachain.tech')) {
+        opts.headers = { ...opts.headers, 'Origin': 'https://interstellar.dachain.io' };
+        opts.mode = 'cors';
+      }
+      return origFetch(url, opts);
+    };
+  });
   console.log('[*] Stealth browser ready');
 }
 
