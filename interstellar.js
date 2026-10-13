@@ -254,28 +254,26 @@ async function getInstrViaPlaywright(blob) {
 
 // ── Captcha ───────────────────────────────────────────────────────────────────
 async function solveCaptcha() {
-  // Step 1: dapet challenges
-  console.log(`  [cap] fetching challenge...`);
-  const { status: chalStatus, data: chalData } = await httpPost(`${CAP_URL}/challenge`);
-  const chalTime = Date.now();
-  console.log(`  [cap] challenge status: ${chalStatus}`);
-  console.log(`  [cap] chalData keys:`, Object.keys(chalData));
-  console.log(`  [cap] chalData sample:`, JSON.stringify(chalData).slice(0, 300));
-  const { token, challenges } = chalData;
+  const page = sharedPage;
 
-  // pisahin challenge by type
+  // Step 1: fetch challenge via browser (biar ga keblok)
+  console.log(`  [cap] fetching challenge via browser...`);
+  const chalData = await page.evaluate(async (capUrl) => {
+    const r = await fetch(`${capUrl}/challenge`, {
+      method: 'POST',
+      headers: { 'Content-Length': '0', 'Origin': 'https://interstellar.dachain.io' }
+    });
+    return r.json();
+  }, CAP_URL);
+
+  if (!chalData.token) throw new Error(`Challenge gagal: ${JSON.stringify(chalData)}`);
+  console.log(`  [cap] challenges: ${chalData.challenges?.length}`);
+
+  const { token, challenges } = chalData;
   const hashwxChallenges = challenges.filter(c => c.protocol === 'hashwx');
   const instrChallenge = challenges.find(c => c.protocol === 'instrumentation');
 
-  // Step 2: ambil instr dulu via stealth browser (sebelum solve hashwx biar ga expire)
-  let instr = null;
-  if (instrChallenge) {
-    console.log(`  [cap] getting instr via stealth browser...`);
-    instr = await getInstrViaPlaywright(instrChallenge.payload.blob);
-    console.log(`  [cap] instr:`, instr ? 'OK' : 'null (blocked/timeout)');
-  }
-
-  // Step 3: solve hashwx (setelah instr, biar fresh)
+  // Step 2: solve hashwx di Node.js
   const solutions = [];
   for (const ch of hashwxChallenges) {
     process.stdout.write(`  [cap] solving hashwx...`);
@@ -284,17 +282,27 @@ async function solveCaptcha() {
     solutions.push({ nonce: parseInt(nonce) });
   }
 
-  // Step 4: redeem
-  console.log(`  [cap] redeeming... elapsed=${((Date.now()-chalTime)/1000).toFixed(1)}s`);
-  const body = { solutions, token, ...(instr ? { instr } : {}) };
-  console.log(`  [cap] token:`, token?.slice(0, 50));
-  console.log(`  [cap] solutions:`, JSON.stringify(solutions));
-  console.log(`  [cap] instr keys:`, instr ? Object.keys(instr) : null);
-  if (instr) console.log(`  [cap] instr.i:`, instr.i, 'state:', JSON.stringify(instr.state));
-  const { status: redeemStatus, data: redeemData } = await httpPost(`${CAP_URL}/redeem`, {}, body);
-  console.log(`  [cap] redeem status: ${redeemStatus}`, JSON.stringify(redeemData).slice(0, 200));
+  // Step 3: instr via browser iframe
+  let instr = null;
+  if (instrChallenge) {
+    console.log(`  [cap] getting instr...`);
+    instr = await getInstrViaPlaywright(instrChallenge.payload.blob);
+    console.log(`  [cap] instr:`, instr ? 'OK' : 'null');
+  }
+
+  // Step 4: redeem via browser
+  console.log(`  [cap] redeeming via browser...`);
+  const redeemData = await page.evaluate(async (capUrl, body) => {
+    const r = await fetch(`${capUrl}/redeem`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Origin': 'https://interstellar.dachain.io' },
+      body: JSON.stringify(body)
+    });
+    return r.json();
+  }, CAP_URL, { solutions, token, ...(instr ? { instr } : {}) });
+
+  console.log(`  [cap] redeem:`, JSON.stringify(redeemData).slice(0, 150));
   if (!redeemData.token) throw new Error(`Captcha redeem gagal: ${JSON.stringify(redeemData)}`);
-  console.log(`  [cap] token: ${redeemData.token.slice(0, 20)}...`);
   return redeemData.token;
 }
 
