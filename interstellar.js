@@ -273,13 +273,13 @@ async function solveCaptcha() {
 
   // Step 1: fetch challenge via browser (biar ga keblok)
   console.log(`  [cap] fetching challenge via browser...`);
-  const chalData = await page.evaluate(async (capUrl) => {
+  const chalData = await page.evaluate(async ({ capUrl }) => {
     const r = await fetch(`${capUrl}/challenge`, {
       method: 'POST',
       headers: { 'Content-Length': '0', 'Origin': 'https://interstellar.dachain.io' }
     });
     return r.json();
-  }, CAP_URL);
+  }, { capUrl: CAP_URL });
 
   if (!chalData.token) throw new Error(`Challenge gagal: ${JSON.stringify(chalData)}`);
   console.log(`  [cap] challenges: ${chalData.challenges?.length}`);
@@ -307,14 +307,14 @@ async function solveCaptcha() {
 
   // Step 4: redeem via browser
   console.log(`  [cap] redeeming via browser...`);
-  const redeemData = await page.evaluate(async (capUrl, body) => {
+  const redeemData = await page.evaluate(async ({ capUrl, body }) => {
     const r = await fetch(`${capUrl}/redeem`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Origin': 'https://interstellar.dachain.io' },
       body: JSON.stringify(body)
     });
     return r.json();
-  }, CAP_URL, { solutions, token, ...(instr ? { instr } : {}) });
+  }, { capUrl: CAP_URL, body: { solutions, token, ...(instr ? { instr } : {}) } });
 
   console.log(`  [cap] redeem:`, JSON.stringify(redeemData).slice(0, 150));
   if (!redeemData.token) throw new Error(`Captcha redeem gagal: ${JSON.stringify(redeemData)}`);
