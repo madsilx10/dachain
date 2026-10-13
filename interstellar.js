@@ -51,33 +51,56 @@ function hexToBytes(hex) {
 
 const crypto = require('crypto');
 
-async function solveHashwx(c, d) {
+async function solveHashwx(c, d, n = 65536) {
   const w = wasmExports;
   const target = ((1n << 64n) - 1n) / BigInt(d);
+  const W = BigInt(n);
 
   const seedPtr = w.hashwx_seed(wasmCtx);
   const mem = new Uint8Array(w.memory.buffer);
 
-  // set seed dari c, update "program" di shared memory via hashwx_make
-  // sub-WASM adalah VM interpreter — bytecode sama, program beda per challenge
   const cBytes = new Uint8Array(32);
   for (let i = 0; i < 32; i++) cBytes[i] = parseInt(c.slice(2*i, 2*i+2), 16);
-  mem.set(cBytes, seedPtr);
-  w.hashwx_make(wasmCtx, seedPtr);
 
-  // pakai subExecFn dari initWasm — JANGAN recompile, shared memory udah diupdate
-  let nonce = 0n;
+  // seed40 = c (32 bytes) || outerIdx (8 bytes LE) — diupdate tiap outer
+  const seed40 = new Uint8Array(40);
+  seed40.set(cBytes, 0);
+
+  let outerIdx = 0;
   const start = Date.now();
+
   while (true) {
-    w.hashwx_exec_begin(wasmCtx, nonce);
-    subExecFn(wasmRegPtr, wasmMemPtr);
-    const result = BigInt.asUintN(64, w.hashwx_exec_final(wasmCtx));
-    if (result <= target) {
-      console.log(` solved in ${Date.now()-start}ms, nonce=${nonce}`);
-      return nonce.toString();
+    // encode outerIdx sebagai little-endian 8 bytes
+    let tmp = outerIdx;
+    for (let e = 0; e < 8; e++) { seed40[32 + e] = tmp & 0xff; tmp = Math.floor(tmp / 256); }
+
+    // SHA256(c || outerIdx) → seed untuk hashwx_make
+    const x = new Uint8Array(crypto.createHash('sha256').update(seed40).digest());
+    mem.set(x, seedPtr);
+    w.hashwx_make(wasmCtx, seedPtr);
+
+    // async compile sub-wasm — fix hang di Termux (sync WebAssembly.Module bisa ngehang)
+    const modPtr = w.hashwx_module(wasmCtx);
+    const modSize = w.hashwx_module_size(wasmCtx);
+    const modBytes = new Uint8Array(w.memory.buffer, modPtr, modSize).slice();
+    const subMod = await WebAssembly.compile(modBytes);
+    const subInst = await WebAssembly.instantiate(subMod, { env: { memory: w.memory } });
+    const subExec = subInst.exports.exec;
+
+    // inner loop: nonces [outerIdx*n, outerIdx*n + n)
+    const base = BigInt(outerIdx) * W;
+    for (let inner = 0n; inner < W; inner++) {
+      const fullNonce = base + inner;
+      w.hashwx_exec_begin(wasmCtx, fullNonce);
+      subExec(wasmRegPtr, wasmMemPtr);
+      const result = BigInt.asUintN(64, w.hashwx_exec_final(wasmCtx));
+      if (result <= target) {
+        console.log(` solved in ${Date.now()-start}ms, nonce=${fullNonce} (outer=${outerIdx})`);
+        return fullNonce.toString();
+      }
     }
-    nonce++;
-    if (nonce % 100000n === 0n) process.stdout.write(`\r  [hashwx] nonce ${nonce}...`);
+    outerIdx++;
+    process.stdout.write(`\r  [hashwx] outer=${outerIdx} nonce=${outerIdx * n}...`);
   }
 }
 
@@ -277,7 +300,7 @@ async function solveCaptcha() {
   const solutions = [];
   for (const ch of hashwxChallenges) {
     process.stdout.write(`  [cap] solving hashwx c=${String(ch.payload.c).slice(0,8)}...`);
-    const nonce = await solveHashwx(ch.payload.c, ch.payload.d);
+    const nonce = await solveHashwx(ch.payload.c, ch.payload.d, ch.payload.n);
 
     // self-verify sebelum submit
     {
