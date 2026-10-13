@@ -51,50 +51,41 @@ function hexToBytes(hex) {
 
 const crypto = require('crypto');
 
-async function solveHashwx(c, d, n = 65536) {
+async function solveHashwx(c, d) {
   const w = wasmExports;
   const target = ((1n << 64n) - 1n) / BigInt(d);
-  const W = BigInt(n); // chunk size per outer loop
+
   const seedPtr = w.hashwx_seed(wasmCtx);
   const mem = new Uint8Array(w.memory.buffer);
 
-  // c sebagai 32 raw bytes
+  // set seed dari c langsung — tanpa SHA256 outer loop
   const cBytes = new Uint8Array(32);
   for (let i = 0; i < 32; i++) cBytes[i] = parseInt(c.slice(2*i, 2*i+2), 16);
+  mem.set(cBytes, seedPtr);
+  w.hashwx_make(wasmCtx, seedPtr);
 
-  const seed40 = new Uint8Array(40);
-  seed40.set(cBytes, 0);
+  // compile sub-wasm sekali aja
+  const modPtr = w.hashwx_module(wasmCtx);
+  const modSize = w.hashwx_module_size(wasmCtx);
+  const modBytes = new Uint8Array(w.memory.buffer, modPtr, modSize).slice();
+  const subInst = new WebAssembly.Instance(
+    new WebAssembly.Module(modBytes),
+    { env: { memory: w.memory } }
+  );
+  const subExec = subInst.exports.exec;
 
-  let outerIdx = 0;
-  let subExec = null;
-
+  let nonce = 0n;
+  const start = Date.now();
   while (true) {
-    // update seed dengan outerIdx (little-endian 8 bytes)
-    let tmp = outerIdx;
-    for (let e = 0; e < 8; e++) { seed40[32+e] = tmp & 0xff; tmp = Math.floor(tmp/256); }
-
-    // SHA-256(seed40) → x
-    const x = new Uint8Array(crypto.createHash('sha256').update(seed40).digest());
-    mem.set(x, seedPtr);
-    w.hashwx_make(wasmCtx, seedPtr);
-
-    // reload sub-wasm tiap outer dengan shared memory
-    const modPtr = w.hashwx_module(wasmCtx);
-    const modSize = w.hashwx_module_size(wasmCtx);
-    const modBytes = new Uint8Array(w.memory.buffer, modPtr, modSize).slice();
-    const subInst = new WebAssembly.Instance(new WebAssembly.Module(modBytes), { env: { memory: w.memory } });
-    subExec = subInst.exports.exec;
-
-    // inner loop
-    const base = BigInt(outerIdx) * W;
-    for (let inner = 0n; inner < W; inner++) {
-      const fullNonce = base + inner;
-      w.hashwx_exec_begin(wasmCtx, fullNonce);
-      subExec(wasmRegPtr, wasmMemPtr);
-      const result = BigInt.asUintN(64, w.hashwx_exec_final(wasmCtx));
-      if (result <= target) return fullNonce.toString();
+    w.hashwx_exec_begin(wasmCtx, nonce);
+    subExec(wasmRegPtr, wasmMemPtr);
+    const result = BigInt.asUintN(64, w.hashwx_exec_final(wasmCtx));
+    if (result <= target) {
+      console.log(` solved in ${Date.now()-start}ms, nonce=${nonce}`);
+      return nonce.toString();
     }
-    outerIdx++;
+    nonce++;
+    if (nonce % 100000n === 0n) process.stdout.write(`\r  [hashwx] nonce ${nonce}...`);
   }
 }
 
@@ -292,9 +283,9 @@ async function solveCaptcha() {
   const solutions = [];
   for (const ch of hashwxChallenges) {
     process.stdout.write(`  [cap] solving hashwx...`);
-    const nonce = await solveHashwx(ch.payload.c, ch.payload.d, ch.payload.n);
+    const nonce = await solveHashwx(ch.payload.c, ch.payload.d);
     process.stdout.write(` nonce=${nonce}\n`);
-    solutions.push({ nonce: parseInt(nonce) });
+    solutions.push({ nonce: Number(nonce) });
   }
 
   // Step 3: instr via browser iframe
