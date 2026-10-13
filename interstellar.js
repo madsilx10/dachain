@@ -49,22 +49,51 @@ function hexToBytes(hex) {
   return bytes;
 }
 
-async function solveHashwx(c, d) {
+const crypto = require('crypto');
+
+async function solveHashwx(c, d, n = 65536) {
   const w = wasmExports;
   const target = ((1n << 64n) - 1n) / BigInt(d);
+  const W = BigInt(n); // chunk size per outer loop
   const seedPtr = w.hashwx_seed(wasmCtx);
   const mem = new Uint8Array(w.memory.buffer);
-  for (let i = 0; i < c.length; i++) mem[seedPtr + i] = c.charCodeAt(i);
-  mem[seedPtr + c.length] = 0;
-  w.hashwx_make(wasmCtx, seedPtr);
 
-  let nonce = 0n;
+  // c sebagai 32 raw bytes
+  const cBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) cBytes[i] = parseInt(c.slice(2*i, 2*i+2), 16);
+
+  const seed40 = new Uint8Array(40);
+  seed40.set(cBytes, 0);
+
+  let outerIdx = 0;
+  let subExec = null;
+
   while (true) {
-    w.hashwx_exec_begin(wasmCtx, nonce);
-    subExecFn(wasmRegPtr, wasmMemPtr);
-    const result = BigInt.asUintN(64, w.hashwx_exec_final(wasmCtx));
-    if (result <= target) return nonce.toString();
-    nonce++;
+    // update seed dengan outerIdx (little-endian 8 bytes)
+    let tmp = outerIdx;
+    for (let e = 0; e < 8; e++) { seed40[32+e] = tmp & 0xff; tmp = Math.floor(tmp/256); }
+
+    // SHA-256(seed40) → x
+    const x = new Uint8Array(crypto.createHash('sha256').update(seed40).digest());
+    mem.set(x, seedPtr);
+    w.hashwx_make(wasmCtx, seedPtr);
+
+    // reload sub-wasm tiap outer
+    const modPtr = w.hashwx_module(wasmCtx);
+    const modSize = w.hashwx_module_size(wasmCtx);
+    const modBytes = new Uint8Array(w.memory.buffer, modPtr, modSize).slice();
+    subExec = new WebAssembly.Instance(new WebAssembly.Module(modBytes), { env: { memory: w.memory } }).exports.exec;
+
+    // inner loop
+    const base = BigInt(outerIdx) * W;
+    for (let inner = 0n; inner < W; inner++) {
+      const fullNonce = base + inner;
+      w.hashwx_exec_begin(wasmCtx, fullNonce);
+      subExec(wasmRegPtr, wasmMemPtr);
+      const result = BigInt.asUintN(64, w.hashwx_exec_final(wasmCtx));
+      if (result <= target) return fullNonce.toString();
+    }
+    outerIdx++;
   }
 }
 
@@ -248,7 +277,7 @@ async function solveCaptcha() {
   const solutions = [];
   for (const ch of hashwxChallenges) {
     process.stdout.write(`  [cap] solving hashwx...`);
-    const nonce = await solveHashwx(ch.payload.c, ch.payload.d);
+    const nonce = await solveHashwx(ch.payload.c, ch.payload.d, ch.payload.n);
     process.stdout.write(` nonce=${nonce}\n`);
     solutions.push({ nonce: parseInt(nonce) });
   }
