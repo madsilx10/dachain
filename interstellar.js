@@ -311,9 +311,12 @@ async function solveCaptcha() {
     console.log(`  [cap] getting instr...`);
     instr = await getInstrViaPlaywright(instrChallenge.payload.blob);
     console.log(`  [cap] instr:`, instr ? 'OK' : 'null');
+    console.log(`  [dbg] instr content:`, JSON.stringify(instr));
   }
 
   // Step 4: redeem via browser
+  const redeemBody = { solutions, token, ...(instr ? { instr } : {}) };
+  console.log(`  [dbg] full redeem body:`, JSON.stringify(redeemBody));
   console.log(`  [cap] redeeming via browser...`);
   const redeemData = await page.evaluate(async ({ capUrl, body }) => {
     const r = await fetch(`${capUrl}/redeem`, {
@@ -322,7 +325,7 @@ async function solveCaptcha() {
       body: JSON.stringify(body)
     });
     return r.json();
-  }, { capUrl: CAP_URL, body: { solutions, token, ...(instr ? { instr } : {}) } });
+  }, { capUrl: CAP_URL, body: redeemBody });
 
   console.log(`  [cap] redeem:`, JSON.stringify(redeemData).slice(0, 150));
   if (!redeemData.token) throw new Error(`Captcha redeem gagal: ${JSON.stringify(redeemData)}`);
