@@ -301,17 +301,13 @@ async function solveCaptcha() {
     console.log(`  [cap] instr:`, instr ? 'OK' : 'null');
   }
 
-  // Step 3: build solutions dari instr.state (bukan Node.js WASM solving)
-  let solutions = [];
+  // server validasi hashwx dari instr.state, solutions array tidak dikirim
   if (instr && instr.state) {
-    solutions = Object.values(instr.state).map(nonce => ({ nonce }));
-    console.log(`  [cap] solutions from instr.state:`, JSON.stringify(solutions));
-  } else {
-    console.log(`  [cap] WARNING: instr.state kosong, solutions array empty`);
+    console.log(`  [cap] instr.state keys:`, Object.keys(instr.state).length, '→', JSON.stringify(instr.state));
   }
 
   // Step 4: redeem via browser
-  const redeemBody = { solutions, token, ...(instr ? { instr } : {}) };
+  const redeemBody = { token, ...(instr ? { instr } : {}) };
   console.log(`  [dbg] full redeem body:`, JSON.stringify(redeemBody));
   console.log(`  [cap] redeeming via browser...`);
   const redeemData = await page.evaluate(async ({ capUrl, body }) => {
