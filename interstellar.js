@@ -293,25 +293,21 @@ async function solveCaptcha() {
   const { token, challenges } = chalData;
   const hashwxChallenges = challenges.filter(c => c.protocol === 'hashwx');
   const instrChallenge = challenges.find(c => c.protocol === 'instrumentation');
-  console.log(`  [dbg] protocols:`, challenges.map(c => c.protocol));
-  console.log(`  [dbg] first full challenge obj:`, JSON.stringify(hashwxChallenges[0]));
-
-  // Step 2: solve hashwx di Node.js
-  const solutions = [];
-  for (const ch of hashwxChallenges) {
-    process.stdout.write(`  [cap] solving hashwx c=${String(ch.payload.c).slice(0,8)}...`);
-    const nonce = await solveHashwx(ch.payload.c, ch.payload.d, ch.payload.n);
-    solutions.push({ nonce: Number(nonce) });
-  }
-  console.log(`  [dbg] solutions:`, JSON.stringify(solutions));
-
-  // Step 3: instr via browser iframe
+  // Step 2: instr dulu — iframe script sudah ngitung hashwx solutions di instr.state
   let instr = null;
   if (instrChallenge) {
     console.log(`  [cap] getting instr...`);
     instr = await getInstrViaPlaywright(instrChallenge.payload.blob);
     console.log(`  [cap] instr:`, instr ? 'OK' : 'null');
-    console.log(`  [dbg] instr content:`, JSON.stringify(instr));
+  }
+
+  // Step 3: build solutions dari instr.state (bukan Node.js WASM solving)
+  let solutions = [];
+  if (instr && instr.state) {
+    solutions = Object.values(instr.state).map(nonce => ({ nonce }));
+    console.log(`  [cap] solutions from instr.state:`, JSON.stringify(solutions));
+  } else {
+    console.log(`  [cap] WARNING: instr.state kosong, solutions array empty`);
   }
 
   // Step 4: redeem via browser
